@@ -1,0 +1,54 @@
+# Source firmware and extracted proprietary resources (retain locally; commit hashes/manifests instead)
+input/
+reference/previous_toolkit/
+results/extracted/
+results/logs/
+results/ghidra/
+extracted/
+firmware/
+LGAPP/
+resources/
+
+# Firmware, vendor components and archives
+*.kdz
+*.cab
+*.wdb
+*.fls
+*.flb
+*.eep
+*.dfat
+*.bin
+*.dll
+*.exe
+*.jar
+*.jad
+*.pxo
+*.pso
+*.dmf
+*.swf
+*.zip
+*.rar
+*.7z
+
+# Ghidra, Python and other temporary files
+*.gpr
+*.rep
+*.gbf
+*.lock
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Keep signing credentials out of the public repository
+*.key
+*.p12
+*.pfx
+id_rsa*
