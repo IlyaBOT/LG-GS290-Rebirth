@@ -10,6 +10,7 @@ import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.midlet.MIDlet;
 import javax.microedition.rms.RecordStore;
+import java.util.Vector;
 
 /**
  * Instrumented Java ME loader probe for the owner's LG GS290.
@@ -158,43 +159,174 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
         else if (c == CMD_INFLATE) runInflateProbe();
     }
 
+    /**
+     * Small-screen text view: word wrap by actual font pixel width, not by a
+     * fixed character count. Supports touchscreen drags and 2/8 or up/down.
+     */
     private final class Screen extends Canvas {
-        private final Font f = Font.getFont(Font.FACE_MONOSPACE, Font.STYLE_PLAIN, Font.SIZE_SMALL);
-        protected void paint(Graphics g) {
-            int w = getWidth(), h = getHeight();
-            g.setColor(0x000000);
-            g.fillRect(0, 0, w, h);
-            g.setFont(f);
-            g.setColor(0xffffff);
-            int y = 3;
-            y = line(g, "LG GS290 / AROMA PROBE", 4, y, 18);
-            g.drawLine(4, y, w - 4, y); y += 6;
-            y = line(g, "CLDC: " + vm, 4, y, 18);
-            y = line(g, "MIDP: " + profile, 4, y, 18);
-            y = line(g, "PLATFORM: " + clip(platform, 25), 4, y, 18);
-            y = line(g, "SCREEN: " + w + "x" + h, 4, y, 18);
-            y = line(g, "LAST RMS: " + prior, 4, y, 18);
-            g.setColor(0xaaaaaa);
-            y = line(g, "JAVA: " + clip(javaStatus, 28), 4, y, 18);
-            y = line(g, "ZIP: " + clip(streamStatus, 28), 4, y, 18);
-            y = line(g, clip(last, 28), 4, y, 18);
-            g.setColor(0xffffff);
-            y += 2;
-            g.drawLine(4, y, w - 4, y); y += 8;
-            y = line(g, "ARM REGISTERS: NO API", 4, y, 18);
-            y = line(g, "RAW MEMORY: NO API", 4, y, 18);
-            y = line(g, "NATIVE EXEC: UNPROVEN", 4, y, 18);
-            if (prior.equals("ARMED") && !tested) {
-                g.setColor(0xffff00);
-                line(g, "PREVIOUS RUN INTERRUPTED", 4, y, 18);
+        private final Font f = Font.getFont(Font.FACE_MONOSPACE, Font.STYLE_PLAIN,
+                                            Font.SIZE_SMALL);
+        private final int lineHeight = f.getHeight() + 3;
+        private int scrollY = 0;
+        private int maxScroll = 0;
+        private int touchStartY = 0;
+        private int touchStartScroll = 0;
+        private boolean touchMoved = false;
+
+        private void appendWrapped(Vector lines, String text, int width) {
+            // Also honor explicit line breaks if the diagnostic text has any.
+            int offset = 0;
+            while (offset <= text.length()) {
+                int next = text.indexOf('\n', offset);
+                if (next < 0) next = text.length();
+                String section = text.substring(offset, next);
+                if (section.length() == 0) {
+                    lines.addElement("");
+                } else {
+                    int pos = 0;
+                    while (pos < section.length()) {
+                        while (pos < section.length() && section.charAt(pos) == ' ') pos++;
+                        if (pos >= section.length()) break;
+                        int fit = pos;
+                        int lastSpace = -1;
+                        for (int i = pos + 1; i <= section.length(); i++) {
+                            if (f.stringWidth(section.substring(pos, i)) > width) break;
+                            fit = i;
+                            if (i < section.length() && section.charAt(i) == ' ') {
+                                lastSpace = i;
+                            }
+                        }
+                        // Split a long single token at the character boundary.
+                        if (fit == pos) fit = pos + 1;
+                        if (fit < section.length() && lastSpace > pos) fit = lastSpace;
+                        lines.addElement(section.substring(pos, fit));
+                        pos = fit;
+                    }
+                }
+                if (next == text.length()) break;
+                offset = next + 1;
             }
         }
-        private int line(Graphics g, String s, int x, int y, int dy) {
-            g.drawString(clip(s, 32), x, y, Graphics.TOP | Graphics.LEFT);
-            return y + dy;
+
+        private Vector makeLines(int width, int height) {
+            Vector lines = new Vector();
+            int maxWidth = Math.max(24, width - 18);
+            appendWrapped(lines, "LG GS290 / AROMA PROBE v0.1.1", maxWidth);
+            lines.addElement("");
+            appendWrapped(lines, "CLDC: " + vm, maxWidth);
+            appendWrapped(lines, "MIDP: " + profile, maxWidth);
+            appendWrapped(lines, "PLATFORM: " + platform, maxWidth);
+            appendWrapped(lines, "SCREEN: " + width + "x" + height, maxWidth);
+            appendWrapped(lines, "LAST RMS: " + prior, maxWidth);
+            lines.addElement("");
+            appendWrapped(lines, "JAVA: " + javaStatus, maxWidth);
+            appendWrapped(lines, "ZIP: " + streamStatus, maxWidth);
+            appendWrapped(lines, last, maxWidth);
+            lines.addElement("");
+            appendWrapped(lines, "ARM REGISTERS: NO API", maxWidth);
+            appendWrapped(lines, "RAW MEMORY: NO API", maxWidth);
+            appendWrapped(lines, "NATIVE EXEC: UNPROVEN", maxWidth);
+            if (prior.equals("ARMED") && !tested) {
+                lines.addElement("");
+                appendWrapped(lines, "PREVIOUS RUN INTERRUPTED", maxWidth);
+            }
+            lines.addElement("");
+            appendWrapped(lines, "SCROLL: swipe / UP-DOWN / 2-8", maxWidth);
+            return lines;
         }
-        private String clip(String s, int max) {
-            return s.length() > max ? s.substring(0, max) : s;
+
+        protected void paint(Graphics g) {
+            int width = getWidth();
+            int height = getHeight();
+            g.setColor(0x000000);
+            g.fillRect(0, 0, width, height);
+            g.setFont(f);
+
+            Vector lines = makeLines(width, height);
+            int totalHeight = 8 + lines.size() * lineHeight;
+            maxScroll = Math.max(0, totalHeight - height);
+            scrollY = Math.min(Math.max(scrollY, 0), maxScroll);
+
+            // Only render visible lines. Clipping keeps scrolling fast on
+            // memory-constrained devices and preserves system softkeys.
+            int top = 4 - scrollY;
+            g.setClip(0, 0, width, height);
+            g.setColor(0xffffff);
+            for (int i = 0; i < lines.size(); i++) {
+                int y = top + i * lineHeight;
+                if (y + lineHeight <= 0 || y >= height) continue;
+                String line = (String) lines.elementAt(i);
+                if (line.length() != 0) {
+                    g.drawString(line, 4, y, Graphics.TOP | Graphics.LEFT);
+                }
+            }
+            if (maxScroll > 0) {
+                // Narrow scrollbar: size and thumb position proportional
+                // to the actual document and viewport heights.
+                int barX = width - 4;
+                int thumbHeight = Math.max(12, height * height / totalHeight);
+                thumbHeight = Math.min(thumbHeight, height);
+                int thumbY = scrollY * (height - thumbHeight) / maxScroll;
+                g.setColor(0x444444);
+                g.fillRect(barX, 0, 3, height);
+                g.setColor(0xffffff);
+                g.fillRect(barX, thumbY, 3, thumbHeight);
+            }
+        }
+
+        private void scrollBy(int pixels) {
+            int next = Math.max(0, Math.min(maxScroll, scrollY + pixels));
+            if (next != scrollY) {
+                scrollY = next;
+                repaint();
+            }
+        }
+
+        protected void keyPressed(int keyCode) {
+            int action = 0;
+            try {
+                action = getGameAction(keyCode);
+            } catch (IllegalArgumentException ignored) { }
+            if (action == Canvas.UP || keyCode == Canvas.KEY_NUM2) {
+                scrollBy(-lineHeight * 3);
+            } else if (action == Canvas.DOWN || keyCode == Canvas.KEY_NUM8) {
+                scrollBy(lineHeight * 3);
+            }
+        }
+
+        protected void keyRepeated(int keyCode) {
+            keyPressed(keyCode);
+        }
+
+        protected void pointerPressed(int x, int y) {
+            touchStartY = y;
+            touchStartScroll = scrollY;
+            touchMoved = false;
+        }
+
+        protected void pointerDragged(int x, int y) {
+            if (Math.abs(y - touchStartY) >= 3) touchMoved = true;
+            int next = Math.max(0, Math.min(maxScroll,
+                                           touchStartScroll + touchStartY - y));
+            if (next != scrollY) {
+                scrollY = next;
+                repaint();
+            }
+        }
+
+        protected void pointerReleased(int x, int y) {
+            int delta = touchStartY - y;
+            if (Math.abs(delta) >= 6) {
+                int next = Math.max(0, Math.min(maxScroll, touchStartScroll + delta));
+                if (next != scrollY) {
+                    scrollY = next;
+                    repaint();
+                }
+            } else if (!touchMoved) {
+                // Some MIDP touch implementations deliver press/release but
+                // never send pointerDragged; tap halves as a fallback.
+                scrollBy((y > getHeight() / 2 ? 1 : -1) * lineHeight * 3);
+            }
         }
     }
 }
