@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: IlyaBOT/J2ME-DevSpace
-          ref: feat/jsr75-optional-file-api-20261023
+          ref: main
           path: .tooling/j2me-devspace
       - uses: actions/setup-python@v5
         with:
