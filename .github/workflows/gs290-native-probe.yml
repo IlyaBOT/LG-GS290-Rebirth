@@ -58,6 +58,22 @@ jobs:
           assert "MIDlet-Jar-URL: GS290NativeProbe-Control.jar" in jad
           print("CONTROL PASS",len(v),"resource bytes")
           PY
+      - name: Verify malformed ZIP packaging offline only
+        run: |
+          python3 experiments/j2me-native-probe/tools/pack_probe.py \
+            --input experiments/j2me-native-probe/dist/GS290NativeProbe.jar \
+            --jad experiments/j2me-native-probe/dist/GS290NativeProbe.jad \
+            --out experiments/j2me-native-probe/dist/GS290NativeProbe-UNSAFE-OFFLINE-ONLY.jar \
+            --mode huffman-oob --i-accept-phone-crash-risk
+          python3 - <<'PY'
+          import pathlib, zipfile
+          p=pathlib.Path('experiments/j2me-native-probe/dist/GS290NativeProbe-UNSAFE-OFFLINE-ONLY.jar')
+          with zipfile.ZipFile(p) as z:
+              info=z.getinfo('GS290ProbePayload.bin')
+              assert info.compress_type == 8
+              assert info.compress_size == 78
+          print('OFFLINE MALFORMED ZIP STRUCTURE PASS; NOT A DEVICE-READY APP')
+          PY
       - name: Upload safe baseline JAR/JAD only
         uses: actions/upload-artifact@v4
         with:
