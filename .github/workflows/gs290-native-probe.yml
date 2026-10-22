@@ -93,6 +93,15 @@ jobs:
               assert info.compress_size == 78
           print('OFFLINE MALFORMED ZIP STRUCTURE PASS; NOT A DEVICE-READY APP')
           PY
+      - name: Upload PC MegaSuite and instructions
+        uses: actions/upload-artifact@v4
+        with:
+          name: GS290-PC-MegaSuite
+          path: |
+            tools/gs290_pc_megasuite.py
+            tools/tests/test_pc_megasuite.py
+            experiments/j2me-native-probe/MEGASUITE_RU.md
+          if-no-files-found: error
       - name: Upload safe baseline JAR/JAD only
         uses: actions/upload-artifact@v4
         with:
