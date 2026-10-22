@@ -3,6 +3,20 @@
 This is a measurable AROMA Java VM experiment, **NOT a proven native exploit**.
 It belongs in LG-GS290-Rebirth, not J2ME-DevSpace main.
 
+Version 0.1.2 adds a "Save TXT" action using the standard optional JSR-75
+FileConnection API. It lists available storage roots, lets the user set a
+filename, and saves a full UTF-8 report with JVM properties, Java class checks,
+DEFLATE results and the RMS marker. Existing files are never overwritten.
+File write/read permissions are requested as **optional**; the handset may
+prompt for approval. If JSR-75 is absent, denied, or no writable storage exists,
+the MIDlet shows an error while keeping its diagnostics available.
+
+Update/install both 0.1.2 JAR and JAD together to preserve the original
+MIDlet name/vendor/class; the MIDlet version is incremented for in-place
+installation upgrades. The compiler must support project optional_apis
+["jsr75-file"] and optional_permissions; these are only build-time API references
+and JAD/manifest metadata, never shipped as JSR-75 implementations.
+
 The MIDlet uses CLDC 1.1 / MIDP 2.0 and 45.3 StackMap bytecode produced by
 the merged J2ME-DevSpace toolchain. It never flashes the handset.
 
