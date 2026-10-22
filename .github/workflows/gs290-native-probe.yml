@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: IlyaBOT/J2ME-DevSpace
+          ref: feat/jsr75-optional-file-api-20261023
           path: .tooling/j2me-devspace
       - uses: actions/setup-python@v5
         with:
@@ -54,11 +55,16 @@ jobs:
               assert v.startswith(b"LG GS290 DEFLATE RESOURCE CHECK:")
               assert len(z.read("org/ilyabot/gs290/NativeAccessProbe.class")) > 100
               mf=z.read("META-INF/MANIFEST.MF").decode("utf-8")
-              assert "MIDlet-Version: 0.1.1" in mf, "manifest version did not increase"
+              assert "MIDlet-Version: 0.1.2" in mf, "manifest version did not increase"
               assert "MIDlet-Name: GS290 Native Probe" in mf
               assert "MIDlet-Vendor: IlyaBOT" in mf
+          assert "MIDlet-Permissions-Opt:" in mf
+          assert "javax.microedition.io.Connector.file.write" in mf
+          assert "javax.microedition.io.Connector.file.read" in mf
+          assert "org/ilyabot/gs290/ReportFileWriter.class" in z.namelist()
+          assert "javax/microedition/io/file/FileConnection.class" not in z.namelist()
           jad=(root/"GS290NativeProbe-Control.jad").read_text()
-          assert "MIDlet-Version: 0.1.1" in jad, "JAD version did not increase"
+          assert "MIDlet-Version: 0.1.2" in jad, "JAD version did not increase"
           assert "MIDlet-Name: GS290 Native Probe" in jad
           assert "MIDlet-Vendor: IlyaBOT" in jad
           assert "MIDlet-Jar-Size: "+str(jar.stat().st_size) in jad
