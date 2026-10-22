@@ -3,10 +3,17 @@
   "name": "gs290-native-probe",
   "midlet_name": "GS290 Native Probe",
   "midlet_class": "org.ilyabot.gs290.NativeAccessProbe",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "vendor": "IlyaBOT",
   "jar_name": "GS290NativeProbe.jar",
   "icon": "",
   "permissions": [],
-  "default_profile": "lg-gs290"
+  "default_profile": "lg-gs290",
+  "optional_apis": [
+    "jsr75-file"
+  ],
+  "optional_permissions": [
+    "javax.microedition.io.Connector.file.read",
+    "javax.microedition.io.Connector.file.write"
+  ]
 }
