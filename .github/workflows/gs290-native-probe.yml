@@ -29,6 +29,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: PC MegaSuite analysis self-tests
+        run: |
+          python3 tools/tests/test_pc_megasuite.py
       - name: Build CLDC-1.1 MIDlet with ECJ
         run: |
           python3 .tooling/j2me-devspace/templates/tools/phonebuild/main.py \
@@ -55,7 +58,7 @@ jobs:
               assert v.startswith(b"LG GS290 DEFLATE RESOURCE CHECK:")
               assert len(z.read("org/ilyabot/gs290/NativeAccessProbe.class")) > 100
               mf=z.read("META-INF/MANIFEST.MF").decode("utf-8")
-              assert "MIDlet-Version: 0.1.2" in mf, "manifest version did not increase"
+              assert "MIDlet-Version: 0.2.0" in mf, "manifest version did not increase"
               assert "MIDlet-Name: GS290 Native Probe" in mf
               assert "MIDlet-Vendor: IlyaBOT" in mf
               assert "MIDlet-Permissions-Opt:" in mf
@@ -63,9 +66,11 @@ jobs:
               assert "javax.microedition.io.Connector.file.write" in normalized
               assert "javax.microedition.io.Connector.file.read" in normalized
               assert "org/ilyabot/gs290/ReportFileWriter.class" in z.namelist()
+              assert "org/ilyabot/gs290/MegaSuite.class" in z.namelist()
+              assert "MIDlet-Version: 0.2.0" in mf
               assert "javax/microedition/io/file/FileConnection.class" not in z.namelist()
           jad=(root/"GS290NativeProbe-Control.jad").read_text()
-          assert "MIDlet-Version: 0.1.2" in jad, "JAD version did not increase"
+          assert "MIDlet-Version: 0.2.0" in jad, "JAD version did not increase"
           assert "MIDlet-Name: GS290 Native Probe" in jad
           assert "MIDlet-Vendor: IlyaBOT" in jad
           assert "MIDlet-Jar-Size: "+str(jar.stat().st_size) in jad
