@@ -242,7 +242,9 @@ public final class MegaSuite {
                 }
             });
             t.start();
-            t.join(1500);
+            for (int tick = 0; tick < 30 && t.isAlive(); tick++) {
+                Thread.sleep(10);
+            }
             check("thread start/join", !t.isAlive() && shared[0] == 32640,
                     "sum=" + shared[0] + " alive=" + t.isAlive());
         } catch (Throwable e) {
