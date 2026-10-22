@@ -53,7 +53,14 @@ jobs:
               v=z.read("GS290ProbePayload.bin")
               assert v.startswith(b"LG GS290 DEFLATE RESOURCE CHECK:")
               assert len(z.read("org/ilyabot/gs290/NativeAccessProbe.class")) > 100
+              mf=z.read("META-INF/MANIFEST.MF").decode("utf-8")
+              assert "MIDlet-Version: 0.1.1" in mf, "manifest version did not increase"
+              assert "MIDlet-Name: GS290 Native Probe" in mf
+              assert "MIDlet-Vendor: IlyaBOT" in mf
           jad=(root/"GS290NativeProbe-Control.jad").read_text()
+          assert "MIDlet-Version: 0.1.1" in jad, "JAD version did not increase"
+          assert "MIDlet-Name: GS290 Native Probe" in jad
+          assert "MIDlet-Vendor: IlyaBOT" in jad
           assert "MIDlet-Jar-Size: "+str(jar.stat().st_size) in jad
           assert "MIDlet-Jar-URL: GS290NativeProbe-Control.jar" in jad
           print("CONTROL PASS",len(v),"resource bytes")
