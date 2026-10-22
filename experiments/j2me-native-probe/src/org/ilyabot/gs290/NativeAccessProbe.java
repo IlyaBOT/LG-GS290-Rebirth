@@ -1,6 +1,12 @@
 package org.ilyabot.gs290;
 
 import java.io.InputStream;
+import javax.microedition.lcdui.Alert;
+import javax.microedition.lcdui.AlertType;
+import javax.microedition.lcdui.Choice;
+import javax.microedition.lcdui.ChoiceGroup;
+import javax.microedition.lcdui.Form;
+import javax.microedition.lcdui.TextField;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -24,7 +30,10 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
     private static final String RESOURCE = "/GS290ProbePayload.bin";
     private static final Command CMD_JAVA = new Command("Java APIs", Command.SCREEN, 1);
     private static final Command CMD_INFLATE = new Command("DEFLATE test", Command.SCREEN, 2);
-    private static final Command CMD_EXIT = new Command("Exit", Command.EXIT, 3);
+    private static final Command CMD_SAVE = new Command("Save TXT", Command.SCREEN, 3);
+    private static final Command CMD_WRITE = new Command("Save", Command.OK, 1);
+    private static final Command CMD_CANCEL = new Command("Cancel", Command.BACK, 2);
+    private static final Command CMD_EXIT = new Command("Exit", Command.EXIT, 4);
 
     private Display display;
     private Screen screen;
@@ -35,6 +44,11 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
     private String javaStatus = "NOT RUN";
     private String streamStatus = "NOT RUN";
     private String prior = "NONE";
+    private String saveStatus = "NOT SAVED";
+    private Form exportForm;
+    private ChoiceGroup exportRoots;
+    private TextField exportFilename;
+    private String[] detectedRoots;
     private boolean tested;
 
     public void startApp() {
@@ -47,6 +61,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
             screen = new Screen();
             screen.addCommand(CMD_JAVA);
             screen.addCommand(CMD_INFLATE);
+            screen.addCommand(CMD_SAVE);
             screen.addCommand(CMD_EXIT);
             screen.setCommandListener(this);
         }
@@ -153,10 +168,112 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
         }
     }
 
+    private String buildReport() {
+        StringBuffer b = new StringBuffer(800);
+        b.append("GS290 NATIVE ACCESS PROBE REPORT\r\n");
+        b.append("Version: 0.1.2\r\n");
+        b.append("Timestamp (epoch ms): ").append(System.currentTimeMillis()).append("\r\n");
+        b.append("MIDlet: GS290 Native Probe / IlyaBOT\r\n");
+        b.append("CLDC: ").append(vm).append("\r\n");
+        b.append("MIDP: ").append(profile).append("\r\n");
+        b.append("Platform: ").append(platform).append("\r\n");
+        b.append("Canvas size: ").append(screen.getWidth()).append("x")
+            .append(screen.getHeight()).append("\r\n");
+        b.append("FileConnection API: ")
+            .append(prop("microedition.io.file.FileConnection.version")).append("\r\n");
+        b.append("Java heap free: ").append(Runtime.getRuntime().freeMemory()).append("\r\n");
+        b.append("Java heap total: ").append(Runtime.getRuntime().totalMemory()).append("\r\n");
+        b.append("\r\nRESULTS\r\n");
+        b.append("Previous RMS marker: ").append(prior).append("\r\n");
+        b.append("Current RMS marker: ").append(readMarker()).append("\r\n");
+        b.append("Java class checks: ").append(javaStatus).append("\r\n");
+        b.append("DEFLATE result: ").append(streamStatus).append("\r\n");
+        b.append("Last operation: ").append(last).append("\r\n");
+        b.append("\r\nLIMITATIONS\r\n");
+        b.append("ARM registers: unavailable from standard Java ME\r\n");
+        b.append("Arbitrary memory: unavailable from standard Java ME\r\n");
+        b.append("Native execution: NOT PROVEN\r\n");
+        b.append("RMS interruption is not evidence of RCE.\r\n");
+        b.append("Malformed DEFLATE experiments are excluded from control builds.\r\n");
+        return b.toString();
+    }
+
+    private void showExportForm() {
+        // JSR-75 FileConnection is optional on MIDP devices.
+        if (!exists("javax.microedition.io.file.FileConnection")) {
+            saveStatus = "JSR-75 FILE API NOT AVAILABLE";
+            showAlert("TXT export", saveStatus, AlertType.WARNING);
+            return;
+        }
+        try {
+            detectedRoots = ReportFileWriter.roots();
+            if (detectedRoots.length == 0) {
+                saveStatus = "NO FILESYSTEM ROOTS";
+                showAlert("TXT export", saveStatus, AlertType.WARNING);
+                return;
+            }
+            exportForm = new Form("Save debug report");
+            exportRoots = new ChoiceGroup("Storage", Choice.EXCLUSIVE);
+            for (int i = 0; i < detectedRoots.length; i++) {
+                exportRoots.append(detectedRoots[i], null);
+            }
+            exportRoots.setSelectedIndex(0, true);
+            String filename = "GS290_Report_" +
+                              (System.currentTimeMillis() % 10000000L) + ".txt";
+            exportFilename = new TextField("File name", filename, 50, TextField.ANY);
+            exportForm.append(exportRoots);
+            exportForm.append(exportFilename);
+            exportForm.append("Uses JSR-75 FileConnection; the phone may request permission. Existing files are never overwritten.");
+            exportForm.addCommand(CMD_WRITE);
+            exportForm.addCommand(CMD_CANCEL);
+            exportForm.setCommandListener(this);
+            display.setCurrent(exportForm);
+        } catch (SecurityException e) {
+            saveStatus = "DENIED: " + e.getClass().getName();
+            showAlert("TXT export", saveStatus, AlertType.ERROR);
+        } catch (Throwable e) {
+            saveStatus = "ROOT ERROR: " + e.getClass().getName() + " " + e.getMessage();
+            showAlert("TXT export", saveStatus, AlertType.ERROR);
+        }
+    }
+
+    private void writeExport() {
+        try {
+            int index = exportRoots.getSelectedIndex();
+            if (index < 0 || index >= detectedRoots.length) {
+                throw new IllegalArgumentException("Select storage root");
+            }
+            String filename = exportFilename.getString();
+            String location = ReportFileWriter.writeNew(
+                    detectedRoots[index], filename, buildReport());
+            saveStatus = "SAVED: " + location;
+            last = "TXT REPORT SAVED";
+            showAlert("TXT saved", location, AlertType.INFO);
+        } catch (SecurityException ex) {
+            saveStatus = "PERMISSION DENIED: " + ex.getClass().getName();
+            last = "TXT SAVE DENIED";
+            showAlert("TXT export failed", saveStatus, AlertType.ERROR);
+        } catch (Throwable ex) {
+            saveStatus = "SAVE ERROR: " + ex.getClass().getName() + ": " + ex.getMessage();
+            last = "TXT SAVE FAILED";
+            showAlert("TXT export failed", saveStatus, AlertType.ERROR);
+        }
+        screen.repaint();
+    }
+
+    private void showAlert(String title, String value, AlertType type) {
+        Alert alert = new Alert(title, value, null, type);
+        alert.setTimeout(Alert.FOREVER);
+        display.setCurrent(alert, screen);
+    }
+
     public void commandAction(Command c, Displayable d) {
         if (c == CMD_EXIT) notifyDestroyed();
         else if (c == CMD_JAVA) runJavaChecks();
         else if (c == CMD_INFLATE) runInflateProbe();
+        else if (c == CMD_SAVE) showExportForm();
+        else if (c == CMD_WRITE && d == exportForm) writeExport();
+        else if (c == CMD_CANCEL && d == exportForm) display.setCurrent(screen);
     }
 
     /**
@@ -211,7 +328,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
         private Vector makeLines(int width, int height) {
             Vector lines = new Vector();
             int maxWidth = Math.max(24, width - 18);
-            appendWrapped(lines, "LG GS290 / AROMA PROBE v0.1.1", maxWidth);
+            appendWrapped(lines, "LG GS290 / AROMA PROBE v0.1.2", maxWidth);
             lines.addElement("");
             appendWrapped(lines, "CLDC: " + vm, maxWidth);
             appendWrapped(lines, "MIDP: " + profile, maxWidth);
@@ -222,6 +339,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
             appendWrapped(lines, "JAVA: " + javaStatus, maxWidth);
             appendWrapped(lines, "ZIP: " + streamStatus, maxWidth);
             appendWrapped(lines, last, maxWidth);
+            appendWrapped(lines, "TXT: " + saveStatus, maxWidth);
             lines.addElement("");
             appendWrapped(lines, "ARM REGISTERS: NO API", maxWidth);
             appendWrapped(lines, "RAW MEMORY: NO API", maxWidth);
