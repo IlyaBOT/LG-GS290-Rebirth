@@ -59,8 +59,9 @@ jobs:
               assert "MIDlet-Name: GS290 Native Probe" in mf
               assert "MIDlet-Vendor: IlyaBOT" in mf
           assert "MIDlet-Permissions-Opt:" in mf
-          assert "javax.microedition.io.Connector.file.write" in mf
-          assert "javax.microedition.io.Connector.file.read" in mf
+          normalized = mf.replace("\\r\\n ", "").replace("\\n ", "")
+          assert "javax.microedition.io.Connector.file.write" in normalized
+          assert "javax.microedition.io.Connector.file.read" in normalized
           assert "org/ilyabot/gs290/ReportFileWriter.class" in z.namelist()
           assert "javax/microedition/io/file/FileConnection.class" not in z.namelist()
           jad=(root/"GS290NativeProbe-Control.jad").read_text()
