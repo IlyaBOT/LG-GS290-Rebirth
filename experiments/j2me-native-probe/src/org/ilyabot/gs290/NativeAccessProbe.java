@@ -30,6 +30,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
     private static final String RESOURCE = "/GS290ProbePayload.bin";
     private static final Command CMD_JAVA = new Command("Java APIs", Command.SCREEN, 1);
     private static final Command CMD_INFLATE = new Command("DEFLATE test", Command.SCREEN, 2);
+    private static final Command CMD_ALL = new Command("Run ALL", Command.SCREEN, 1);
     private static final Command CMD_SAVE = new Command("Save TXT", Command.SCREEN, 3);
     private static final Command CMD_WRITE = new Command("Save", Command.OK, 1);
     private static final Command CMD_CANCEL = new Command("Cancel", Command.BACK, 2);
@@ -45,6 +46,10 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
     private String streamStatus = "NOT RUN";
     private String prior = "NONE";
     private String saveStatus = "NOT SAVED";
+    private String suiteStatus = "NOT RUN";
+    private String megaReport = "";
+    private boolean suiteRunning;
+    private int suiteRunCount;
     private Form exportForm;
     private ChoiceGroup exportRoots;
     private TextField exportFilename;
@@ -61,6 +66,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
             screen = new Screen();
             screen.addCommand(CMD_JAVA);
             screen.addCommand(CMD_INFLATE);
+            screen.addCommand(CMD_ALL);
             screen.addCommand(CMD_SAVE);
             screen.addCommand(CMD_EXIT);
             screen.setCommandListener(this);
@@ -171,7 +177,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
     private String buildReport() {
         StringBuffer b = new StringBuffer(800);
         b.append("GS290 NATIVE ACCESS PROBE REPORT\r\n");
-        b.append("Version: 0.1.2\r\n");
+        b.append("Version: 0.2.0\r\n");
         b.append("Timestamp (epoch ms): ").append(System.currentTimeMillis()).append("\r\n");
         b.append("MIDlet: GS290 Native Probe / IlyaBOT\r\n");
         b.append("CLDC: ").append(vm).append("\r\n");
@@ -195,7 +201,65 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
         b.append("Native execution: NOT PROVEN\r\n");
         b.append("RMS interruption is not evidence of RCE.\r\n");
         b.append("Malformed DEFLATE experiments are excluded from control builds.\r\n");
+        b.append("\r\nMEGASUITE SUMMARY\r\n");
+        b.append("Status: ").append(suiteStatus).append("\r\n");
+        if (megaReport.length() > 0) b.append(megaReport);
         return b.toString();
+    }
+
+    private void startMegaSuite() {
+        if (suiteRunning) return;
+        suiteRunning = true;
+        suiteRunCount++;
+        suiteStatus = "RUNNING # " + suiteRunCount;
+        megaReport = "";
+        writeMarker("MEGA:RUNNING");
+        screen.repaint();
+        Thread worker = new Thread(new Runnable() {
+            public void run() {
+                String outcome = "SUITE FAILED";
+                try {
+                    MegaSuite suite = new MegaSuite(NativeAccessProbe.this,
+                            NativeAccessProbe.class, new MegaSuite.Progress() {
+                        public void onProgress(String msg) {
+                            suiteStatus = msg;
+                            screen.repaint();
+                        }
+                    });
+                    megaReport = suite.execute();
+                    outcome = "FINISHED; " + megaReport.length() + " chars";
+                    writeMarker("MEGA:FINISHED");
+                } catch (Throwable ex) {
+                    megaReport += "\r\n[FATAL] " + ex.getClass().getName() +
+                            " " + ex.getMessage() + "\r\n";
+                    outcome = "FAILED: " + ex.getClass().getName();
+                    writeMarker("MEGA:FAILED");
+                } finally {
+                    suiteStatus = outcome;
+                    suiteRunning = false;
+                    last = "MEGASUITE " + outcome;
+                    try {
+                        // Best effort auto-export. If permission is denied,
+                        // manual Save TXT remains available.
+                        String[] roots = ReportFileWriter.roots();
+                        if (roots.length > 0) {
+                            String name = "GS290_Mega_" +
+                                  (System.currentTimeMillis() % 10000000L) + ".txt";
+                            String saved = ReportFileWriter.writeNew(
+                                    roots[0], name, buildReport());
+                            saveStatus = "AUTO: " + saved;
+                        } else {
+                            saveStatus = "NO AUTO SAVE ROOT; USE Save TXT";
+                        }
+                    } catch (Throwable saveError) {
+                        saveStatus = "AUTO SAVE FAILED: " + saveError.getClass().getName()
+                                + " (use Save TXT)";
+                    }
+                    screen.repaint();
+                }
+            }
+        });
+        worker.start();
     }
 
     private void showExportForm() {
@@ -272,6 +336,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
         else if (c == CMD_JAVA) runJavaChecks();
         else if (c == CMD_INFLATE) runInflateProbe();
         else if (c == CMD_SAVE) showExportForm();
+        else if (c == CMD_ALL) startMegaSuite();
         else if (c == CMD_WRITE && d == exportForm) writeExport();
         else if (c == CMD_CANCEL && d == exportForm) display.setCurrent(screen);
     }
@@ -328,7 +393,7 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
         private Vector makeLines(int width, int height) {
             Vector lines = new Vector();
             int maxWidth = Math.max(24, width - 18);
-            appendWrapped(lines, "LG GS290 / AROMA PROBE v0.1.2", maxWidth);
+            appendWrapped(lines, "LG GS290 / MEGASUITE v0.2.0", maxWidth);
             lines.addElement("");
             appendWrapped(lines, "CLDC: " + vm, maxWidth);
             appendWrapped(lines, "MIDP: " + profile, maxWidth);
@@ -340,11 +405,12 @@ public final class NativeAccessProbe extends MIDlet implements CommandListener {
             appendWrapped(lines, "ZIP: " + streamStatus, maxWidth);
             appendWrapped(lines, last, maxWidth);
             appendWrapped(lines, "TXT: " + saveStatus, maxWidth);
+            appendWrapped(lines, "RUN ALL: " + suiteStatus, maxWidth);
             lines.addElement("");
             appendWrapped(lines, "ARM REGISTERS: NO API", maxWidth);
             appendWrapped(lines, "RAW MEMORY: NO API", maxWidth);
             appendWrapped(lines, "NATIVE EXEC: UNPROVEN", maxWidth);
-            if (prior.equals("ARMED") && !tested) {
+            if ((prior.equals("ARMED") || prior.equals("MEGA:RUNNING")) && !tested) {
                 lines.addElement("");
                 appendWrapped(lines, "PREVIOUS RUN INTERRUPTED", maxWidth);
             }
