@@ -3,7 +3,7 @@
   "name": "gs290-native-probe",
   "midlet_name": "GS290 Native Probe",
   "midlet_class": "org.ilyabot.gs290.NativeAccessProbe",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "vendor": "IlyaBOT",
   "jar_name": "GS290NativeProbe.jar",
   "icon": "",
