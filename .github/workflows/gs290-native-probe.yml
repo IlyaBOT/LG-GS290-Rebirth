@@ -1,0 +1,112 @@
+name: GS290 J2ME Native Probe Control
+on:
+  push:
+    branches:
+      - research/j2me-native-access-probe-20261023
+    paths:
+      - 'experiments/j2me-native-probe/**'
+      - '.github/workflows/gs290-native-probe.yml'
+  pull_request:
+    paths:
+      - 'experiments/j2me-native-probe/**'
+      - '.github/workflows/gs290-native-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  control-midlet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: IlyaBOT/J2ME-DevSpace
+          ref: main
+          path: .tooling/j2me-devspace
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: PC MegaSuite analysis self-tests
+        run: |
+          python3 tools/tests/test_pc_megasuite.py
+      - name: Build CLDC-1.1 MIDlet with ECJ
+        run: |
+          python3 .tooling/j2me-devspace/templates/tools/phonebuild/main.py \
+            --workspace "$GITHUB_WORKSPACE" \
+            --project experiments/j2me-native-probe
+      - name: Package safe controlled resource and inspect
+        run: |
+          python3 experiments/j2me-native-probe/tools/pack_probe.py \
+            --input experiments/j2me-native-probe/dist/GS290NativeProbe.jar \
+            --jad experiments/j2me-native-probe/dist/GS290NativeProbe.jad \
+            --out experiments/j2me-native-probe/dist/GS290NativeProbe-Control.jar \
+            --mode control
+          python3 .tooling/j2me-devspace/templates/tools/phonebuild/main.py \
+            --inspect-jar experiments/j2me-native-probe/dist/GS290NativeProbe-Control.jar
+      - name: ZIP/deflate regression checks
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile, zlib, hashlib
+          root=pathlib.Path("experiments/j2me-native-probe/dist")
+          jar=root/"GS290NativeProbe-Control.jar"
+          with zipfile.ZipFile(jar) as z:
+              assert z.testzip() is None
+              v=z.read("GS290ProbePayload.bin")
+              assert v.startswith(b"LG GS290 DEFLATE RESOURCE CHECK:")
+              assert len(z.read("org/ilyabot/gs290/NativeAccessProbe.class")) > 100
+              mf=z.read("META-INF/MANIFEST.MF").decode("utf-8")
+              assert "MIDlet-Version: 0.2.0" in mf, "manifest version did not increase"
+              assert "MIDlet-Name: GS290 Native Probe" in mf
+              assert "MIDlet-Vendor: IlyaBOT" in mf
+              assert "MIDlet-Permissions-Opt:" in mf
+              normalized = mf.replace("\r\n ", "").replace("\n ", "")
+              assert "javax.microedition.io.Connector.file.write" in normalized
+              assert "javax.microedition.io.Connector.file.read" in normalized
+              assert "org/ilyabot/gs290/ReportFileWriter.class" in z.namelist()
+              assert "org/ilyabot/gs290/MegaSuite.class" in z.namelist()
+              assert "MIDlet-Version: 0.2.0" in mf
+              assert "javax/microedition/io/file/FileConnection.class" not in z.namelist()
+          jad=(root/"GS290NativeProbe-Control.jad").read_text()
+          assert "MIDlet-Version: 0.2.0" in jad, "JAD version did not increase"
+          assert "MIDlet-Name: GS290 Native Probe" in jad
+          assert "MIDlet-Vendor: IlyaBOT" in jad
+          assert "MIDlet-Jar-Size: "+str(jar.stat().st_size) in jad
+          assert "MIDlet-Jar-URL: GS290NativeProbe-Control.jar" in jad
+          print("CONTROL PASS",len(v),"resource bytes")
+          PY
+      - name: Verify malformed ZIP packaging offline only
+        run: |
+          python3 experiments/j2me-native-probe/tools/pack_probe.py \
+            --input experiments/j2me-native-probe/dist/GS290NativeProbe.jar \
+            --jad experiments/j2me-native-probe/dist/GS290NativeProbe.jad \
+            --out experiments/j2me-native-probe/dist/GS290NativeProbe-UNSAFE-OFFLINE-ONLY.jar \
+            --mode huffman-oob --i-accept-phone-crash-risk
+          python3 - <<'PY'
+          import pathlib, zipfile
+          p=pathlib.Path('experiments/j2me-native-probe/dist/GS290NativeProbe-UNSAFE-OFFLINE-ONLY.jar')
+          with zipfile.ZipFile(p) as z:
+              info=z.getinfo('GS290ProbePayload.bin')
+              assert info.compress_type == 8
+              assert info.compress_size == 78
+          print('OFFLINE MALFORMED ZIP STRUCTURE PASS; NOT A DEVICE-READY APP')
+          PY
+      - name: Upload PC MegaSuite and instructions
+        uses: actions/upload-artifact@v4
+        with:
+          name: GS290-PC-MegaSuite
+          path: |
+            tools/gs290_pc_megasuite.py
+            tools/tests/test_pc_megasuite.py
+            experiments/j2me-native-probe/MEGASUITE_RU.md
+          if-no-files-found: error
+      - name: Upload safe baseline JAR/JAD only
+        uses: actions/upload-artifact@v4
+        with:
+          name: GS290NativeProbe-Control
+          path: |
+            experiments/j2me-native-probe/dist/GS290NativeProbe-Control.jar
+            experiments/j2me-native-probe/dist/GS290NativeProbe-Control.jad
+          if-no-files-found: error
